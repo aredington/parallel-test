@@ -1,5 +1,6 @@
 (ns com.holychao.parallel-test.runner
-  (:require [clojure.core.async :as async]
+  (:require [com.holychao.parallel-test :as ptest]
+            [clojure.core.async :as async]
             [robert.hooke :as hook]
             [clojure.test :as test]
             [clojure.set :as set]))
@@ -13,20 +14,35 @@
                    (cond
                     (#{:fail :error} (:type m)) (when-let [first-var (-> test/*testing-vars* first meta)]
                                                   (swap! failures conj (ns-name (:ns first-var)))
-                                                  (newline)
-                                                  (println "lein parallel-test :only"
-                                                           (str (ns-name (:ns first-var))
-                                                                "/"
-                                                                (:name first-var))))
-                    (= :begin-test-category (:type m)) (test/with-test-out 
-                                                         (newline)
-                                                         (println "Testing category" (:category m)))
+                                                  (test/with-test-out
+                                                    (locking *out*
+                                                      (newline)
+                                                      (println "lein parallel-test :only"
+                                                               (str (ns-name (:ns first-var))
+                                                                    "/"
+                                                                    (:name first-var)))
+                                                      (apply report m args))))
+                    (= :begin-test-category (:type m)) (test/with-test-out
+                                                         (locking *out*
+                                                           (newline)
+                                                           (println "Testing category" (:category m))))
                     (= :end-test-category (:type m)) nil
                     (= :begin-test-ns (:type m)) (test/with-test-out
                                                    (locking *out*
                                                      (newline)
                                                      (println "lein parallel-test" (ns-name (:ns m)) "# on thread " (:runner m))))
-                    :else (apply report m args)))))
+                    :else (test/with-test-out
+                            (locking *out*
+                              (apply report m args)))))))
+
+(defn- monkeypatch-clojure-test-inc-report-counter
+  []
+  (hook/add-hook #'test/inc-report-counter
+                 (fn [broken name & args]
+                   (when test/*report-counters*
+                     (dosync
+                      (commute test/*report-counters*
+                               update-in [name] (fnil inc 0)))))))
 
 (defn select-clause
   [var [selector args]]
@@ -52,21 +68,23 @@
   (when var
     (with-local-vars [different-var nil
                       current-ns (-> var meta :ns)]
-      (test/do-report {:type :begin-test-ns :ns @current-ns :category category :runner index})
-      (let [once-fixture-fn (test/join-fixtures (::test/once-fixtures (meta @current-ns)))
-            each-fixture-fn (test/join-fixtures (::test/each-fixtures (meta @current-ns)))]
-        (once-fixture-fn
-         (fn []
-           (loop [v var]
-             (when (:test (meta v))
-               (each-fixture-fn (fn [] (test/test-var v)))
-               (let [new-v (async/<!! test-source)
-                     ns-of (comp :ns meta)]
-                 (cond (nil? new-v) nil
-                       (= (ns-of var) (ns-of new-v)) (recur new-v)
-                       :else (var-set different-var new-v))))))))
-      (test/do-report {:type :end-test-ns :ns @current-ns :category category :runner index})
-      @different-var)))
+      (binding [ptest/*category* category
+                ptest/*index* index]
+        (test/do-report {:type :begin-test-ns :ns @current-ns :category category :runner index})
+        (let [once-fixture-fn (test/join-fixtures (::test/once-fixtures (meta @current-ns)))
+              each-fixture-fn (test/join-fixtures (::test/each-fixtures (meta @current-ns)))]
+          (once-fixture-fn
+           (fn []
+             (loop [v var]
+               (when (:test (meta v))
+                 (each-fixture-fn (fn [] (test/test-var v)))
+                 (let [new-v (async/<!! test-source)
+                       ns-of (comp :ns meta)]
+                   (cond (nil? new-v) nil
+                         (= (ns-of var) (ns-of new-v)) (recur new-v)
+                         :else (var-set different-var new-v))))))))
+        (test/do-report {:type :end-test-ns :ns @current-ns :category category :runner index})
+        @different-var))))
 
 (defn parallel-test-vars
   "Groups vars by their namespace and runs test-vars on them with
@@ -87,23 +105,24 @@ appropriate fixtures applied."
 
 (defn- test-summary
   [{:keys [categorizer sequence pools] :as config} namespaces selectors]
-  (binding [test/*test-out* *out*
-            test/*report-counters* (ref test/*initial-report-counters*)]
-    (let [vars (if (seq selectors)
-                 (->> namespaces
-                      (mapcat (comp vals ns-interns))
-                      (filter (fn [var] (-> var meta :test)))
-                      (filter (fn [var] (some (partial select-clause var) selectors)))))
-          categories (->> vars
-                          (group-by #(-> % meta categorizer))
-                          (map (fn [[k v]] [k (sort-by (comp :ns meta) v)]))
-                          (into {}))
-          dregs (set/difference (set (keys categories)) (set sequence))]
-      (doseq [category (concat sequence dregs)]
-        (test/do-report {:type :begin-test-category :category category})
-        (parallel-test-vars category ((pools category)) (categories category))
-        (test/do-report {:type :end-test-category :category category}))
-      @test/*report-counters*)))
+  (let [vars (if (seq selectors)
+               (->> namespaces
+                    (mapcat (comp vals ns-interns))
+                    (filter (fn [var] (-> var meta :test)))
+                    (filter (fn [var] (some (partial select-clause var) selectors)))))
+        categories (->> vars
+                        (group-by #(-> % meta categorizer))
+                        (map (fn [[k v]] [k (sort-by (comp ns-name :ns meta) v)]))
+                        (into {}))
+        dregs (set/difference (set (keys categories)) (set sequence))]
+    (apply merge-with +
+           (for [category (concat sequence dregs)]
+             (binding [test/*test-out* *out*
+                       test/*report-counters* (ref test/*initial-report-counters*)] 
+               (test/do-report {:type :begin-test-category :category category})
+               (parallel-test-vars category ((pools category)) (categories category))
+               (test/do-report {:type :end-test-category :category category})
+               @test/*report-counters*)))))
 
 (defn parallel-test
   [config nses selectors monkeypatch? exit-after-tests?]
@@ -121,7 +140,9 @@ appropriate fixtures applied."
       (apply require :reload namespaces))
     (let [failures (atom #{})
           selected-namespaces (select-namespaces namespaces selectors)
-          _ (when monkeypatch? (monkeypatch-clojure-test-report failures))
+          _ (when monkeypatch?
+              (monkeypatch-clojure-test-report failures)
+              (monkeypatch-clojure-test-inc-report-counter))
           summary (test-summary config selected-namespaces selectors)]
       (test/do-report (assoc summary :type :summary))
       (spit ".lein-failures"
