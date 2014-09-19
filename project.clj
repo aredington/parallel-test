@@ -1,4 +1,4 @@
-(defproject com.holychao/parallel-test "0.1.0-SNAPSHOT"
+(defproject com.holychao/parallel-test "0.1.0"
   :description "Executes tests in parallel."
   :url "http://github.com/aredington/parallel-test"
   :license {:name "EPL"
