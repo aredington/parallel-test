@@ -8,7 +8,7 @@ parallel, execute all the tests flagged as such.
 
 ## Usage
 
-Put `[parallel-test "0.1.0"]` into the `:plugins` vector of your project.clj.
+Put `[parallel-test "0.1.1"]` into the `:plugins` vector of your project.clj.
 
     $ lein parallel-test
 
