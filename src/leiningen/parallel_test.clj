@@ -108,8 +108,8 @@ namespace and print an overall summary."
                       (project/add-profiles {:parallel-test parallel-test-profile})
                       (project/merge-profiles [:leiningen/test :test :parallel-test]))
           [nses selectors] (read-args tests project)
-          config (or (:parallel-test project)
-                     default-config)
+          config (merge default-config
+                        (:parallel-test project))
           form (form-for-testing-namespaces config nses (vec selectors))]
       (try (when-let [n (eval/eval-in-project project form
                                               '(do (require 'clojure.test)
