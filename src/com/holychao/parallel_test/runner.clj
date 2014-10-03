@@ -67,40 +67,48 @@
   from test-source, provided the tests are in the same ns as var. When
   a test is returned from test-source not in the same ns, returns it
   without running it. If test-source is closed, returns nil."
-  [index category test-source var]
-  (when var
-    (with-local-vars [different-var nil
-                      current-ns (-> var meta :ns)]
-      (binding [ptest/*category* category
-                ptest/*index* index]
-        (test/do-report {:type :begin-test-ns :ns @current-ns :category category :runner index})
-        (let [once-fixture-fn (test/join-fixtures (::test/once-fixtures (meta @current-ns)))
-              each-fixture-fn (test/join-fixtures (::test/each-fixtures (meta @current-ns)))]
+  [index category test-source]
+  (binding [ptest/*category* category
+            ptest/*index* index]
+    (let [first-var (async/<!! test-source)
+          this-ns (-> first-var meta :ns)]
+      (when first-var
+        (test/do-report {:type :begin-test-ns :ns this-ns :category category :runner index})
+        (let [once-fixture-fn (test/join-fixtures (::test/once-fixtures (meta this-ns)))
+              each-fixture-fn (test/join-fixtures (::test/each-fixtures (meta this-ns)))]
           (once-fixture-fn
            (fn []
-             (loop [v var]
+             (loop [v first-var]
                (when (:test (meta v))
                  (each-fixture-fn (fn [] (test/test-var v)))
-                 (let [new-v (async/<!! test-source)
-                       ns-of (comp :ns meta)]
-                   (cond (nil? new-v) nil
-                         (= (ns-of var) (ns-of new-v)) (recur new-v)
-                         :else (var-set different-var new-v))))))))
-        (test/do-report {:type :end-test-ns :ns @current-ns :category category :runner index})
-        @different-var))))
+                 (let [new-v (async/<!! test-source)]
+                   (when new-v (recur new-v))))))))
+        (test/do-report {:type :end-test-ns :ns this-ns :category category :runner index})))))
 
 (defn parallel-test-vars
   "Groups vars by their namespace and runs test-vars on them with
 appropriate fixtures applied."
   [category threads vars]
-  (let [test-sink (async/chan threads)
+  (let [test-sources (->> vars
+                          (group-by (comp :ns meta))
+                          (map (fn [[_ v]] (let [ch (async/chan 1)]
+                                             (async/onto-chan ch v)
+                                             ch))))
+        open-chan (async/chan)
+        close-chan (async/chan threads)
+        coordinator (async/go-loop [sources test-sources]
+                      (if (seq sources)
+                        (recur (async/alt! [[open-chan (first sources)]] (concat (rest sources)
+                                                                                 (list (first sources)))
+                                           close-chan ([closed-chan] (remove #(= closed-chan %) sources))))
+                        (async/close! open-chan)))
         testers (doall (for [index (range threads)]
-                         (async/go-loop [new-ns-var (test-ns-vars index category test-sink (async/<! test-sink))]
-                           (when new-ns-var
-                             (recur (test-ns-vars index category test-sink new-ns-var))))))]
-    (doseq [var vars]
-      (async/>!! test-sink var))
-    (async/close! test-sink)
+                         (async/go-loop [source (async/<! open-chan)]
+                           (when source
+                             (test-ns-vars index category source)
+                             (async/>! close-chan source)
+                             (recur (async/<! open-chan))))))]
+    (async/<!! coordinator)
     (loop [running-testers testers]
       (when-not (empty? running-testers)
         (let [[_ completed-tester] (async/alts!! (vec running-testers))]
