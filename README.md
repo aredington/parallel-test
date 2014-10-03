@@ -8,7 +8,7 @@ parallel, execute all the tests flagged as such.
 
 ## Usage
 
-Put `[com.holychao/parallel-test "0.3.0-SNAPSHOT"]` into the `:plugins` vector of your project.clj.
+Put `[com.holychao/parallel-test "0.3.0"]` into the `:plugins` vector of your project.clj.
 
     $ lein parallel-test
 

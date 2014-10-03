@@ -1,6 +1,6 @@
 (ns com.holychao.parallel-test)
 
-(def VERSION "0.3.0-SNAPSHOT")
+(def VERSION "0.3.0")
 
 (def ^:dynamic *category*
   "Var holding the current category while tests are being run."
