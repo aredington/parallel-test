@@ -22,18 +22,21 @@
                                                                     "/"
                                                                     (:name first-var)))
                                                       (apply report m args))))
-                    (= :begin-test-category (:type m)) (test/with-test-out
-                                                         (locking *out*
-                                                           (newline)
-                                                           (println "Testing category" (:category m))))
-                    (= :end-test-category (:type m)) nil
                     (= :begin-test-ns (:type m)) (test/with-test-out
                                                    (locking *out*
                                                      (newline)
-                                                     (println "lein parallel-test" (ns-name (:ns m)) "# on thread " (:runner m))))
+                                                     (println "lein parallel-test" (ns-name (:ns m)) "# on thread" (:runner m))))
                     :else (test/with-test-out
                             (locking *out*
                               (apply report m args)))))))
+
+(defmethod test/report :begin-test-category [m]
+  (test/with-test-out
+    (locking *out*
+      (newline)
+      (println "Testing category" (:category m)))))
+
+(defmethod test/report :end-test-category [m])
 
 (defn- monkeypatch-clojure-test-inc-report-counter
   []
