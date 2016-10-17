@@ -106,7 +106,7 @@ appropriate fixtures applied."
                          (async/go-loop [source (async/<! open-chan)]
                            (when source
                              (test-ns-vars index category source)
-                             (async/>! close-chan source)
+                             (async/put! close-chan source)
                              (recur (async/<! open-chan))))))]
     (async/<!! coordinator)
     (loop [running-testers testers]
