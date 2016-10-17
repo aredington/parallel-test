@@ -18,7 +18,7 @@
     :sequence [:serial]})
 
 (def ^:private parallel-test-profile
-  {:dependencies [['org.clojure/core.async "0.1.338.0-5c5012-alpha"]
+  {:dependencies [['org.clojure/core.async "0.2.391"]
                   ['com.holychao/parallel-test ptest/VERSION]
                   ['robert/hooke "1.3.0"]]})
 
