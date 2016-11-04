@@ -70,7 +70,7 @@
   [index category test-source]
   (binding [ptest/*category* category
             ptest/*index* index]
-    (let [first-var (async/<!! test-source)
+    (let [first-var (async/<! test-source)
           this-ns (-> first-var meta :ns)]
       (when first-var
         (test/do-report {:type :begin-test-ns :ns this-ns :category category :runner index})
@@ -81,7 +81,7 @@
              (loop [v first-var]
                (when (:test (meta v))
                  (each-fixture-fn (fn [] (test/test-var v)))
-                 (let [new-v (async/<!! test-source)]
+                 (let [new-v (async/<! test-source)]
                    (when new-v (recur new-v))))))))
         (test/do-report {:type :end-test-ns :ns this-ns :category category :runner index})))))
 
