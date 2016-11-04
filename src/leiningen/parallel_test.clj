@@ -18,7 +18,7 @@
     :sequence [:serial]})
 
 (def ^:private parallel-test-profile
-  {:dependencies [['org.clojure/core.async "0.1.338.0-5c5012-alpha"]
+  {:dependencies [['org.clojure/core.async "0.2.391"]
                   ['com.holychao/parallel-test ptest/VERSION]
                   ['robert/hooke "1.3.0"]]})
 
@@ -105,7 +105,7 @@ namespace and print an overall summary."
             *monkeypatch?* (:monkeypatch-clojure-test project true)]
     (let [profile (or (:parallel-test (:profiles project)) parallel-test-profile)
           project (-> project
-                      (project/add-profiles {:parallel-test parallel-test-profile})
+                      (project/add-profiles {:parallel-test profile})
                       (project/merge-profiles [:leiningen/test :test :parallel-test]))
           [nses selectors] (read-args tests project)
           config (merge default-config
