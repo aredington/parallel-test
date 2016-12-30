@@ -103,11 +103,12 @@ appropriate fixtures applied."
                                            close-chan ([closed-chan] (remove #(= closed-chan %) sources))))
                         (async/close! open-chan)))
         testers (doall (for [index (range threads)]
-                         (async/go-loop [source (async/<! open-chan)]
-                           (when source
-                             (test-ns-vars index category source)
-                             (async/>! close-chan source)
-                             (recur (async/<! open-chan))))))]
+                         (async/thread
+                           (loop [source (async/<!! open-chan)]
+                             (when source
+                               (test-ns-vars index category source)
+                               (async/>!! close-chan source)
+                               (recur (async/<!! open-chan)))))))]
     (async/<!! coordinator)
     (loop [running-testers testers]
       (when-not (empty? running-testers)
@@ -129,7 +130,7 @@ appropriate fixtures applied."
     (apply merge-with +
            (for [category (concat sequence dregs)]
              (binding [test/*test-out* *out*
-                       test/*report-counters* (ref test/*initial-report-counters*)] 
+                       test/*report-counters* (ref test/*initial-report-counters*)]
                (test/do-report {:type :begin-test-category :category category})
                (parallel-test-vars category ((pools category)) (categories category))
                (test/do-report {:type :end-test-category :category category})
