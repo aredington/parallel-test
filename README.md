@@ -8,7 +8,7 @@ parallel, execute all the tests flagged as such.
 
 ## Usage
 
-Put `[com.holychao/parallel-test "0.3.1"]` into the `:plugins` vector of your project.clj.
+Put `[com.holychao/parallel-test "0.3.2"]` into the `:plugins` vector of your project.clj.
 
     $ lein parallel-test
 
@@ -64,6 +64,8 @@ parallel. The default sequencing configuration is:
 ```
 
 ## Caveats
+
+Parallel-test requires Clojure 1.5 or greater.
 
 Running tests in parallel means exactly that; parallel-test does not
 tackle the subjects of isolation or concurrent access for you. If your

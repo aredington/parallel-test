@@ -2,6 +2,7 @@
   "Run the project's tests in parallel."
   (:refer-clojure :exclude [test])
   (:require [clojure.java.io :as io]
+            [clojure.set :as set]
             [bultitude.core :as b]
             [leiningen.core.eval :as eval]
             [leiningen.core.main :as main]
@@ -17,10 +18,10 @@
             :parallel (fn [] (.availableProcessors (Runtime/getRuntime)))}
     :sequence [:serial]})
 
-(def ^:private parallel-test-profile
-  {:dependencies [['org.clojure/core.async "0.2.395"]
-                  ['com.holychao/parallel-test ptest/VERSION]
-                  ['robert/hooke "1.3.0"]]})
+(def ^:private parallel-test-dependencies
+  {'org.clojure/core.async "0.4.474"
+   'com.holychao/parallel-test ptest/VERSION
+   'robert/hooke "1.3.0"})
 
 ;; TODO: make this an arg to form-for-testing-namespaces in 3.0.
 (def ^:private ^:dynamic *monkeypatch?* true)
@@ -93,6 +94,18 @@ namespace and print an overall summary."
       (main/abort "Please specify :test-selectors in project.clj"))
     [nses selectors]))
 
+(defn ensure-ptest-deps
+  "Ensure that deps holds SOME version of the libraries required by
+  parallel-test. This always yields primacy to the project.clj, but if
+  e.g. core.async is missing, it'll slot in the default version the
+  plugin defines."
+  [deps]
+  (let [missing-deps (->> deps
+                          (map first)
+                          set
+                          (set/difference (set (keys parallel-test-dependencies))))]
+    (into deps (select-keys parallel-test-dependencies missing-deps))))
+
 (defn parallel-test
   "Run the project's tests in parallel."
   [project & tests]
@@ -103,10 +116,12 @@ namespace and print an overall summary."
                                  false
                                  *exit-after-tests*)
             *monkeypatch?* (:monkeypatch-clojure-test project true)]
-    (let [profile (or (:parallel-test (:profiles project)) parallel-test-profile)
+    (let [profile (:parallel-test (:profiles project))
+          profile-targets (cond-> [:leiningen/test :test]
+                            profile (conj :parallel-test))
           project (-> project
-                      (project/add-profiles {:parallel-test profile})
-                      (project/merge-profiles [:leiningen/test :test :parallel-test]))
+                      (project/merge-profiles profile-targets)
+                      (update :dependencies ensure-ptest-deps))
           [nses selectors] (read-args tests project)
           config (merge default-config
                         (:parallel-test project))
