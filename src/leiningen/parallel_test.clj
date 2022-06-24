@@ -19,7 +19,7 @@
     :sequence [:serial]})
 
 (def ^:private parallel-test-dependencies
-  {'org.clojure/core.async "0.4.474"
+  {'org.clojure/core.async "1.5.648"
    'com.holychao/parallel-test ptest/VERSION
    'robert/hooke "1.3.0"})
 
